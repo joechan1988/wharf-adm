@@ -59,6 +59,8 @@ def deploy_etcd_cluster():
     while timeout:
         discovery = shell_exec(
             "curl -X PUT http://127.0.0.1:2379/v2/keys/discovery/{key}/_config/size -d value=1".format(key=key))
+        if "Connection refused" in discovery:
+            continue
         if key in discovery:
             break
         timeout -= 1
@@ -143,7 +145,7 @@ def deploy_apiserver():
                   --etcd-cafile=/etc/wharf/auth/ca.pem \
                   --etcd-certfile=/etc/wharf/auth/etcd.pem \
                   --etcd-keyfile=/etc/wharf/auth/etcd-key.pem \
-                  --etcd-servers=https://{advertise_address}:3379 \
+                  --etcd-servers=https://{advertise_address}:12379 \
                   --enable-swagger-ui=true \
                   --allow-privileged=true \
                   --apiserver-count=3 \
