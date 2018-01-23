@@ -7,6 +7,7 @@ def deploy_loadbalancer():
 
 
 def deploy_etcd_metadata():
+    print("Deploying wharf metadata service")
     timeout = 10
     while timeout:
         discovery = shell_exec("curl -s https://discovery.etcd.io/new?size=1")
@@ -44,6 +45,7 @@ def deploy_etcd_metadata():
 
 
 def deploy_etcd_cluster():
+    print("Deploying wharf cluster datastore service")
     try:
         check_filepath("/etc/wharf/auth/etcd.pem")
         check_filepath("/etc/wharf/auth/etcd-key.pem")
@@ -103,6 +105,8 @@ def deploy_etcd_cluster():
 
 
 def deploy_apiserver():
+    print("Deploying wharf cluster apiserver service")
+
     try:
         check_filepath("/etc/wharf/auth/kubernetes.pem")
         check_filepath("/etc/wharf/auth/kubernetes-key.pem")
@@ -112,9 +116,7 @@ def deploy_apiserver():
         return
 
     advertise_address = os.environ["ADVERTISE_ADDRESS"]
-
     container_check_cmd = "docker ps|grep wharf-apiserver"
-
     container_rm_cmd = "docker rm -f wharf-apiserver"
 
     start_cmd = "docker run -ti -d --name wharf-apiserver \
@@ -164,6 +166,7 @@ def deploy_apiserver():
 
 
 def deploy_cmanager():
+    print("Deploying wharf cluster cmanager service")
     advertise_address = os.environ["ADVERTISE_ADDRESS"]
     container_check_cmd = "docker ps|grep wharf-cmanager"
     container_rm_cmd = "docker rm -f wharf-cmanager"
@@ -201,6 +204,7 @@ def deploy_cmanager():
 
 
 def deploy_scheduler():
+    print("Deploying wharf cluster scheduler service")
     advertise_address = os.environ["ADVERTISE_ADDRESS"]
     container_check_cmd = "docker ps|grep wharf-scheduler"
     container_rm_cmd = "docker rm -f wharf-scheduler"

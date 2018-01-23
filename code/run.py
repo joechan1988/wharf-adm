@@ -15,24 +15,19 @@ class Subcommands(object):
     @cmd_help('Initialize wharf cluster')
     def init(self, args, **cluster_data):
 
-        if not args.advertise_address :
+        if not args.advertise_address:
             try:
                 os.environ["ADVERTISE_ADDRESS"]
             except Exception:
                 print("Please specify the advertise address before initializing")
                 return
         else:
-            os.environ["ADVERTISE_ADDRESS"]=args.advertise_address
+            os.environ["ADVERTISE_ADDRESS"] = args.advertise_address
 
-        print("Deploying wharf metadata service")
         deploy_etcd_metadata()
-        print("Deploying wharf cluster datastore service")
         deploy_etcd_cluster()
-        print("Deploying wharf cluster apiserver service")
         deploy_apiserver()
-        print("Deploying wharf cluster cmanager service")
         deploy_cmanager()
-        print("Deploying wharf cluster scheduler service")
         deploy_scheduler()
 
     @arg('--filepath', default="/etc/wharf/auth/")
