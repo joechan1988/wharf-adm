@@ -1,3 +1,5 @@
+import random
+import socket
 import subprocess
 import os
 
@@ -25,6 +27,24 @@ def shell_exec(cmd, shell=True):
 
 def get_host_ip():
     pass
+
+
+def get_idle_port(advertise_ip):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    is_used = True
+    while is_used:
+        port = random.randint(20000, 30000)
+        for ip in ["127.0.0.1", advertise_ip, "0.0.0.0"]:
+            try:
+                s.connect(ip, port)
+                s.shutdown(2)
+                is_used = True
+                break
+            except:
+                is_used = False
+
+    return port
 
 
 def cmd_help(text):

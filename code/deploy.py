@@ -1,9 +1,41 @@
+import socket
 import subprocess
-from common import *
 
+import sys
+
+from common import *
+import etcd
+
+clusterdata_dir = "/endpoint/etcd-clusterdata/"
+apiserver_dir = "/endpoint/apiserver/"
+# apiserver_secure_dir = "/endpoint/apiserver-secure/"
+hostname = socket.gethostname()
+
+
+#
+# port_cluster_data = 0
+# port_apiserver = 0
+# port_apiserver_secure = 0
 
 def deploy_loadbalancer():
-    pass
+    print("Deploying wharf proxy service")
+
+    check_cmd = "docker ps|grep wharf-proxy"
+    rm_cmd = "docker rm -f wharf-proxy"
+
+    start_cmd = "docker run -d --name wharf-proxy \
+                    --net=host --privileged --restart=on-failure \
+                    wharf-proxy:0.1 --debug=true"
+
+    try:
+        check_result = shell_exec(check_cmd)
+    except subprocess.CalledProcessError as e:
+        print("---No existing container,starting a new one---")
+        check_result = False
+    if check_result:
+        shell_exec(rm_cmd)
+
+    shell_exec(start_cmd)
 
 
 def deploy_etcd_metadata():
@@ -43,6 +75,50 @@ def deploy_etcd_metadata():
 
     shell_exec(start_cmd)
 
+    check_times = 50
+    while check_times:
+        try:
+            client = etcd.Client(port=2379)
+            client.set("/init", "", ttl=10)
+        except etcd.EtcdConnectionFailed as e:
+            print("...Waiting to get ready...")
+            check_times = check_times - 1
+            continue
+        break
+
+    if not check_times:
+        print("Failed to deploy etcd metadata service...Exiting")
+        sys.exit(1)
+
+
+def init_etcd_metadata(advertise_address):
+    print("Initializing metadata...")
+    meta_client = etcd.Client(host="127.0.0.1", port=2379)
+
+    # hostname = socket.gethostname()
+    port_cluster_data = str(get_idle_port(advertise_address))
+    port_apiserver = str(get_idle_port(advertise_address))
+    port_apiserver_secure = str(get_idle_port(advertise_address))
+
+    # port_cluster_data = "12379"
+    # port_apiserver= "18080"
+    # port_apiserver_secure = "6443"
+
+    meta_client.set(key=clusterdata_dir + hostname + "/name", value=hostname)
+    meta_client.set(key=clusterdata_dir + hostname + "/address", value=advertise_address)
+    meta_client.set(key=clusterdata_dir + hostname + "/port", value=port_cluster_data)
+
+    meta_client.set(key=apiserver_dir + hostname + "/name", value=hostname)
+    meta_client.set(key=apiserver_dir + hostname + "/address", value=advertise_address)
+    meta_client.set(key=apiserver_dir + hostname + "/port", value=port_apiserver)
+    meta_client.set(key=apiserver_dir + hostname + "/secure_port", value=port_apiserver_secure)
+
+    # meta_client.set(key=apiserver_secure_dir + hostname + "/name", value=hostname)
+    # meta_client.set(key=apiserver_secure_dir + hostname + "/address",
+    #                 value=advertise_address)
+    # meta_client.set(key=apiserver_secure_dir + hostname + "/port",
+    #                 value=port_apiserver_secure)
+
 
 def deploy_etcd_cluster():
     print("Deploying wharf cluster datastore service")
@@ -59,8 +135,8 @@ def deploy_etcd_cluster():
     while timeout:
         discovery = shell_exec(
             "curl -X PUT http://127.0.0.1:2379/v2/keys/discovery/{key}/_config/size -d value=1".format(key=key))
-        if "Connection refused" in discovery:
-            continue
+        # if "Connection refused" in discovery:
+        #     continue
         if key in discovery:
             break
         timeout -= 1
@@ -70,7 +146,12 @@ def deploy_etcd_cluster():
         return
 
     discovery_http = "http://127.0.0.1:2379/v2/keys/discovery/{key}".format(key=key)
-    advertise_address = os.environ["ADVERTISE_ADDRESS"]
+    # advertise_address = os.environ["ADVERTISE_ADDRESS"]
+    etcd_client = etcd.Client(port=2379)
+    advertise_address = etcd_client.get(key=clusterdata_dir + hostname + "/address").value
+    advertise_port = etcd_client.get(key=clusterdata_dir + hostname + "/port").value
+    advertise_url = "https://{address}:{port}".format(address=advertise_address,port=advertise_port)
+
     container_check_cmd = "docker ps|grep wharf-cluster-etcd"
     container_rm_cmd = "docker rm -f wharf-cluster-etcd"
 
@@ -88,11 +169,12 @@ def deploy_etcd_cluster():
                   --peer-trusted-ca-file=/etc/wharf/auth/ca.pem \
                   --initial-advertise-peer-urls=https://{advertise_address}:3380 \
                   --listen-peer-urls=https://{advertise_address}:3380 \
-                  --listen-client-urls=https://{advertise_address}:3379 \
-                  --advertise-client-urls=https://{advertise_address}:3379 \
+                  --listen-client-urls={advertise_url} \
+                  --advertise-client-urls={advertise_url} \
                   --discovery={discovery} \
                   --data-dir=/var/lib/etcd-wharf-meta".format(name=advertise_address,
                                                               advertise_address=advertise_address,
+                                                              advertise_url=advertise_url,
                                                               discovery=discovery_http)
 
     try:
@@ -117,7 +199,12 @@ def deploy_apiserver():
         print(e.message)
         return
 
-    advertise_address = os.environ["ADVERTISE_ADDRESS"]
+    # advertise_address = os.environ["ADVERTISE_ADDRESS"]
+    etcd_client = etcd.Client(port=2379)
+    advertise_address = etcd_client.get(key=apiserver_dir + hostname + "/address").value
+    port = etcd_client.get(key=apiserver_dir + hostname + "/port").value
+    secure_port = etcd_client.get(key=apiserver_dir + hostname + "/secure_port").value
+
     container_check_cmd = "docker ps|grep wharf-apiserver"
     container_rm_cmd = "docker rm -f wharf-apiserver"
 
@@ -133,7 +220,9 @@ def deploy_apiserver():
                  --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota \
                   --advertise-address={advertise_address} \
                   --bind-address={advertise_address} \
+                  --secure-port={secure_port} \
                   --insecure-bind-address={advertise_address} \
+                  --insecure-port={port} \
                   --authorization-mode=RBAC \
                   --kubelet-https=true \
                   --service-cluster-ip-range=10.254.0.0/16 \
@@ -154,7 +243,8 @@ def deploy_apiserver():
                   --audit-log-maxsize=100 \
                   --audit-log-path=/var/lib/wharf/kubernetes/audit.log \
                   --event-ttl=1h \
-                  --v=2".format(advertise_address=advertise_address)
+                  --v=2".format(advertise_address=advertise_address, port=port,
+                                secure_port=secure_port)
 
     try:
         check_result = shell_exec(container_check_cmd)
@@ -183,7 +273,7 @@ def deploy_cmanager():
                  cnetes:0.1 \
                  kube-controller-manager \
                   --address=127.0.0.1 \
-                  --master=http://{advertise_address}:8080 \
+                  --master=http://{advertise_address}:18080 \
                   --service-cluster-ip-range=10.254.0.0/16 \
                   --cluster-name=wharf \
                   --cluster-signing-cert-file=/etc/wharf/auth/ca.pem \
@@ -191,7 +281,7 @@ def deploy_cmanager():
                   --service-account-private-key-file=/etc/wharf/auth/ca-key.pem \
                   --root-ca-file=/etc/wharf/auth/ca.pem \
                   --leader-elect=true \
-                  --v=2 \
+                  --v=4 \
                    --allocate-node-cidrs=false".format(advertise_address=advertise_address)
 
     try:
@@ -220,7 +310,7 @@ def deploy_scheduler():
                  cnetes:0.1 \
                  kube-scheduler \
                     --address=127.0.0.1 \
-                      --master=http://{advertise_address}:8080 \
+                      --master=http://{advertise_address}:18080 \
                       --leader-elect=true \
                       --v=2".format(advertise_address=advertise_address)
 

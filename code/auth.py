@@ -23,7 +23,7 @@ ca_csr = {
 ca_config = {
     "signing": {
         "default": {
-            "expiry": "8760h"
+            "expiry": "87600h"
         },
         "profiles": {
             "wharf": {
@@ -33,7 +33,7 @@ ca_config = {
                     "server auth",
                     "client auth"
                 ],
-                "expiry": "8760h"
+                "expiry": "87600h"
             }
         }
     }

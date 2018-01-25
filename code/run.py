@@ -17,14 +17,19 @@ class Subcommands(object):
 
         if not args.advertise_address:
             try:
-                os.environ["ADVERTISE_ADDRESS"]
+                advertise_address = os.environ["ADVERTISE_ADDRESS"]
             except Exception:
                 print("Please specify the advertise address before initializing")
                 return
         else:
             os.environ["ADVERTISE_ADDRESS"] = args.advertise_address
+            advertise_address = args.advertise_address
 
         deploy_etcd_metadata()
+        init_etcd_metadata(advertise_address=advertise_address)
+
+        deploy_loadbalancer()
+
         deploy_etcd_cluster()
         deploy_apiserver()
         deploy_cmanager()
